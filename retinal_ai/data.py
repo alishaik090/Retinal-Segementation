@@ -20,15 +20,17 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 class DrivePair:
     image: Path
     mask: Path
+    field_mask: Path
     identifier: str
 
 
 def find_drive_pairs(drive_dir: Path) -> list[DrivePair]:
     image_dir = drive_dir / "training" / "images"
     mask_dir = drive_dir / "training" / "1st_manual"
-    if not image_dir.exists() or not mask_dir.exists():
+    field_mask_dir = drive_dir / "training" / "mask"
+    if not image_dir.exists() or not mask_dir.exists() or not field_mask_dir.exists():
         raise FileNotFoundError(
-            "Expected DRIVE training/images and training/1st_manual. "
+            "Expected DRIVE training/images, training/1st_manual, and training/mask. "
             "Run the archive extraction step first."
         )
     pairs: list[DrivePair] = []
@@ -37,7 +39,10 @@ def find_drive_pairs(drive_dir: Path) -> list[DrivePair]:
         candidates = sorted(mask_dir.glob(f"{case_id}_manual1.*"))
         if not candidates:
             raise FileNotFoundError(f"No first manual annotation for {image.name}")
-        pairs.append(DrivePair(image, candidates[0], case_id))
+        field_masks = sorted(field_mask_dir.glob(f"{case_id}_training_mask.*"))
+        if not field_masks:
+            raise FileNotFoundError(f"No field-of-view mask for {image.name}")
+        pairs.append(DrivePair(image, candidates[0], field_masks[0], case_id))
     if len(pairs) < 5:
         raise ValueError(f"Expected at least five labelled DRIVE pairs, found {len(pairs)}")
     return pairs
@@ -71,21 +76,34 @@ class DriveDataset(Dataset):
             raise ValueError(f"Unable to read image: {pair.image}")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = np.asarray(Image.open(pair.mask).convert("L"))
+        field_mask = np.asarray(Image.open(pair.field_mask).convert("L"))
         image = cv2.resize(image, (self.image_size, self.image_size), interpolation=cv2.INTER_AREA)
         mask = cv2.resize(mask, (self.image_size, self.image_size), interpolation=cv2.INTER_NEAREST)
+        field_mask = cv2.resize(field_mask, (self.image_size, self.image_size), interpolation=cv2.INTER_NEAREST)
         mask = (mask > 127).astype(np.float32)
+        field_mask = (field_mask > 127).astype(np.float32)
         if self.augment:
+            rotation = random.randrange(4)
+            if rotation:
+                image = np.rot90(image, rotation).copy()
+                mask = np.rot90(mask, rotation).copy()
+                field_mask = np.rot90(field_mask, rotation).copy()
             if random.random() < 0.5:
-                image, mask = np.fliplr(image).copy(), np.fliplr(mask).copy()
+                image = np.fliplr(image).copy()
+                mask = np.fliplr(mask).copy()
+                field_mask = np.fliplr(field_mask).copy()
             if random.random() < 0.25:
-                image, mask = np.flipud(image).copy(), np.flipud(mask).copy()
+                image = np.flipud(image).copy()
+                mask = np.flipud(mask).copy()
+                field_mask = np.flipud(field_mask).copy()
             if random.random() < 0.35:
                 alpha = random.uniform(0.85, 1.15)
                 beta = random.uniform(-10, 10)
                 image = np.clip(image * alpha + beta, 0, 255).astype(np.uint8)
         image_tensor = torch.from_numpy(image.transpose(2, 0, 1).copy()).float() / 255.0
         mask_tensor = torch.from_numpy(mask[None, ...].copy())
-        return image_tensor, mask_tensor, pair.identifier
+        field_mask_tensor = torch.from_numpy(field_mask[None, ...].copy())
+        return image_tensor, mask_tensor, field_mask_tensor, pair.identifier
 
 
 def discover_classification_samples(root: Path):

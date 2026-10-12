@@ -29,11 +29,13 @@ def seed_everything(seed: int) -> None:
 class DiceBCELoss(nn.Module):
     def __init__(self, positive_weight: float = 3.0) -> None:
         super().__init__()
-        self.bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([positive_weight]))
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([positive_weight]), reduction="none")
 
-    def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        bce = self.bce(logits, target)
-        probability = torch.sigmoid(logits)
+    def forward(self, logits: torch.Tensor, target: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+        valid_mask = valid_mask.to(dtype=logits.dtype)
+        bce = (self.bce(logits, target) * valid_mask).sum() / valid_mask.sum().clamp_min(1.0)
+        probability = torch.sigmoid(logits) * valid_mask
+        target = target * valid_mask
         smooth = 1.0
         dice = (2.0 * (probability * target).sum((1, 2, 3)) + smooth) / (probability.sum((1, 2, 3)) + target.sum((1, 2, 3)) + smooth)
         return bce + (1.0 - dice.mean())
@@ -43,17 +45,17 @@ class DiceBCELoss(nn.Module):
 def predict_records(model, loader, device):
     records = []
     model.eval()
-    for image, mask, identifiers in loader:
+    for image, mask, field_mask, identifiers in loader:
         probabilities = torch.sigmoid(model(image.to(device))).cpu().numpy()[:, 0]
-        for probability, truth, identifier in zip(probabilities, mask.numpy()[:, 0], identifiers):
-            records.append((str(identifier), probability, truth))
+        for probability, truth, valid, identifier in zip(probabilities, mask.numpy()[:, 0], field_mask.numpy()[:, 0], identifiers):
+            records.append((str(identifier), probability, truth, valid))
     return records
 
 
 def score_records(records, threshold: float):
     rows = []
-    for identifier, probability, truth in records:
-        row = binary_metrics(truth, probability >= threshold)
+    for identifier, probability, truth, valid_mask in records:
+        row = binary_metrics(truth, probability >= threshold, valid_mask)
         row["id"] = identifier
         rows.append(row)
     return mean_metrics([{k: v for k, v in row.items() if k != "id"} for row in rows]), rows
@@ -93,10 +95,10 @@ def main() -> None:
     for epoch in range(1, args.epochs + 1):
         model.train()
         running_loss, count = 0.0, 0
-        for image, mask, _ in train_loader:
-            image, mask = image.to(device), mask.to(device)
+        for image, mask, field_mask, _ in train_loader:
+            image, mask, field_mask = image.to(device), mask.to(device), field_mask.to(device)
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(image), mask)
+            loss = criterion(model(image), mask, field_mask)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -126,7 +128,7 @@ def main() -> None:
     report = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "task": "DRIVE retinal vessel segmentation",
-        "evaluation_protocol": "Deterministic 60/20/20 split of the 20 manually labelled DRIVE training images. Threshold selected only on validation.",
+        "evaluation_protocol": "Deterministic 60/20/20 split of the 20 manually labelled DRIVE training images. Loss and metrics restricted to DRIVE field of view. Threshold selected only on validation.",
         "warning": "This is a small internal split, not the hidden official DRIVE test benchmark.",
         "model": {"name": checkpoint["model"], "architecture": checkpoint["architecture"], "pretrained_encoder": checkpoint["pretrained_encoder"], "base_channels": args.base_channels, "image_size": args.image_size},
         "seed": args.seed,

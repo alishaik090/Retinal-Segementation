@@ -3,10 +3,14 @@ from __future__ import annotations
 import numpy as np
 
 
-def binary_metrics(target: np.ndarray, prediction: np.ndarray) -> dict[str, float]:
+def binary_metrics(target: np.ndarray, prediction: np.ndarray, valid_mask: np.ndarray | None = None) -> dict[str, float]:
     """Pixel-level binary metrics for pre-thresholded masks."""
     target = target.astype(bool).ravel()
     prediction = prediction.astype(bool).ravel()
+    if valid_mask is not None:
+        valid = valid_mask.astype(bool).ravel()
+        target = target[valid]
+        prediction = prediction[valid]
     tp = int(np.logical_and(target, prediction).sum())
     fp = int(np.logical_and(~target, prediction).sum())
     fn = int(np.logical_and(target, ~prediction).sum())

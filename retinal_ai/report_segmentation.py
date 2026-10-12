@@ -33,11 +33,12 @@ def main() -> None:
     figure, axes = plt.subplots(len(dataset), 3, figsize=(9, 3 * len(dataset)))
     threshold = float(report["threshold"])
     with torch.inference_mode():
-        for row, (image, truth, identifier) in zip(np.atleast_2d(axes), DataLoader(dataset, batch_size=1)):
+        for row, (image, truth, field_mask, identifier) in zip(np.atleast_2d(axes), DataLoader(dataset, batch_size=1)):
             probability = torch.sigmoid(model(image))[0, 0].numpy()
+            valid = field_mask[0, 0].numpy() > 0.5
             row[0].imshow(image[0].permute(1, 2, 0)); row[0].set_title(f"Fundus {identifier[0]}")
-            row[1].imshow(truth[0, 0], cmap="gray", vmin=0, vmax=1); row[1].set_title("Manual annotation")
-            row[2].imshow(probability >= threshold, cmap="gray", vmin=0, vmax=1); row[2].set_title("Prediction")
+            row[1].imshow(np.ma.masked_where(~valid, truth[0, 0]), cmap="gray", vmin=0, vmax=1); row[1].set_title("Manual annotation (FOV)")
+            row[2].imshow(np.ma.masked_where(~valid, probability >= threshold), cmap="gray", vmin=0, vmax=1); row[2].set_title("Prediction (FOV)")
             for axis in row: axis.axis("off")
     figure.suptitle("Held-out DRIVE internal test split (research evaluation)", y=1.01)
     figure.tight_layout(); figure.savefig(REPORTS_DIR / "segmentation_qualitative_test_samples.png", dpi=160, bbox_inches="tight"); plt.close(figure)

@@ -8,30 +8,30 @@
 
 | Area | Status | Evidence |
 |---|---|---|
-| DRIVE vessel-segmentation dataset | Complete | Extracted under `data/raw/DRIVE/` from the supplied `archive (6).zip`. |
-| Vessel segmentation model | Complete and trained | `artifacts/models/vessel_unet_best.pt` |
-| Segmentation evaluation | Complete | `artifacts/reports/segmentation_metrics.json` and visual QA PNGs |
+| DRIVE vessel-segmentation dataset | Complete locally | Extracted under `data/raw/DRIVE/`; excluded from Git. |
+| Vessel segmentation model | Trained locally | `artifacts/models/vessel_unet_best.pt`; checkpoint excluded from Git. |
+| Segmentation evaluation | Complete locally | `artifacts/reports/segmentation_metrics.json` and visual QA PNGs; generated reports excluded from Git. |
 | FastAPI inference service | Complete and smoke-tested | `retinal_ai/api.py`; `POST /analyze` accepts a DRIVE TIFF and creates a mask/overlay |
 | Streamlit UI | Complete | `ui/app.py`; upload image → vessel mask/overlay; shows classifier state |
 | Classification + Grad-CAM code path | Implemented, not trained | `retinal_ai/train_classifier.py`, `evaluate_classifier.py`, and `inference.py` |
 | Classification evaluation | Pending data | No supplied disease-labelled `A/D/G/N` dataset |
-| Automated checks | Passing | `python -m pytest -q` → 4 passed during delivery validation |
+| Automated checks | Passing | `python -m pytest -q` → 6 passed after FOV-aware pipeline changes |
 | Package validation | Passing | ZIP was extracted into a clean folder; expected files and all four tests passed |
 
 ### Measured segmentation result
 
-The saved model is a `ResNet18UNet` trained under a deterministic 60/20/20 split of the **20 manually labelled DRIVE training images**. The threshold was selected on validation only, then frozen for the held-out test split.
+The saved model is a `ResNet18UNet` trained at 256×256 under a deterministic 60/20/20 split of the **20 manually labelled DRIVE training images**. Loss and metrics are restricted to the DRIVE field of view. Threshold 0.65 was selected on validation only, then frozen for the held-out test split.
 
 | Metric | Held-out result |
 |---|---:|
-| Dice | **0.5089** |
-| IoU | 0.3414 |
-| Precision | 0.4674 |
-| Recall | 0.5658 |
-| Specificity | 0.9341 |
-| Pixel accuracy | 0.8990 |
+| Dice | **0.7217** |
+| IoU | 0.5646 |
+| Precision | 0.7541 |
+| Recall | 0.6957 |
+| Specificity | 0.9652 |
+| Pixel accuracy | 0.9277 |
 
-This **does not meet the requested Dice ≥ 0.80**. The value has not been altered or represented as an official DRIVE benchmark. See `MODEL_CARD.md` and `artifacts/reports/segmentation_metrics.json` for the exact protocol, split IDs, threshold, and per-image results.
+This **does not meet the requested Dice ≥ 0.80** and is not directly comparable to the earlier full-frame result because scoring now excludes pixels outside the field of view. It is not an official DRIVE benchmark. See `MODEL_CARD.md` and `artifacts/reports/segmentation_metrics.json` for the exact protocol, split IDs, threshold, and per-image results.
 
 ## 2. Folder structure
 
@@ -131,7 +131,7 @@ The latter is split stratifiably 70/15/15 by `train_classifier.py`. Use properly
 ### Trained vessel segmenter
 
 ```text
-RGB fundus (128 × 128)
+RGB fundus (256 × 256)
   → ImageNet-normalized ResNet-18 encoder
   → skip connections from encoder stages
   → transposed-convolution U-Net decoder
@@ -145,7 +145,7 @@ RGB fundus (128 × 128)
 - Decoder: U-Net-style transposed convolutions and convolution blocks
 - Loss: weighted `BCEWithLogitsLoss` + Dice loss
 - Optimizer: AdamW; learning-rate reduction on validation Dice
-- Input: 128 × 128 RGB; output: 128 × 128 binary mask
+- Input: 256 × 256 RGB; output: 256 × 256 binary mask
 
 ### Pending disease classifier
 
@@ -178,7 +178,7 @@ Open `http://localhost:8501`. API documentation is at `http://127.0.0.1:8000/doc
 ### Retrain segmentation
 
 ```powershell
-python -m retinal_ai.train_segmentation --architecture resnet18_unet --pretrained-encoder --epochs 100 --image-size 128 --batch-size 2
+python -m retinal_ai.train_segmentation --architecture resnet18_unet --pretrained-encoder --epochs 100 --image-size 256 --batch-size 2
 python -m retinal_ai.report_segmentation
 # or double-click train_segmentation.bat
 ```
@@ -209,7 +209,7 @@ python -m compileall retinal_ai ui tests
 
 ## 8. Known bugs and limitations
 
-- **Dice target is unmet:** current held-out Dice is 0.5089, not ≥0.80. Pixel accuracy must not be substituted for Dice.
+- **Dice target is unmet:** current held-out FOV Dice is 0.7217, not ≥0.80. Pixel accuracy must not be substituted for Dice.
 - **No disease dataset was provided:** classification and Grad-CAM code exists but there is no trained disease classifier or classification metric report.
 - **Small segmentation data:** only 20 manually labelled source images are available for the internal split; results have high variance and are not an official DRIVE score.
 - **DRIVE `test/mask` files are field-of-view masks, not vessel annotations:** they cannot be used to calculate vessel Dice.

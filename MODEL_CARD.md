@@ -23,22 +23,22 @@ The original classification notebook documents FIVES class labels and expects fo
 
 `artifacts/models/vessel_unet_best.pt` was trained from the supplied labelled DRIVE training images using a deterministic 60/20/20 split. The ResNet-18 encoder begins with official ImageNet weights and was fine-tuned with a Dice+BCE objective.
 
-The checkpoint and DRIVE data are local-only and are not included in this Git repository. The metrics below document the previously measured local run; reproduce it after placing the dataset under `data/raw/DRIVE` and running the training script.
+The checkpoint and DRIVE data are local-only and are not included in this Git repository. The metrics below document the latest measured local run; reproduce it after placing the dataset under `data/raw/DRIVE` and running the training script. It uses 256×256 inputs, field-of-view-masked loss and evaluation, and a threshold selected on validation only.
 
 | Held-out metric | Measured value |
 |---|---:|
-| Dice | **0.5089** |
-| IoU | 0.3414 |
-| Precision | 0.4674 |
-| Recall | 0.5658 |
-| Specificity | 0.9341 |
-| Pixel accuracy | 0.8990 |
+| Dice | **0.7217** |
+| IoU | 0.5646 |
+| Precision | 0.7541 |
+| Recall | 0.6957 |
+| Specificity | 0.9652 |
+| Pixel accuracy | 0.9277 |
 
 The exact split IDs, threshold, per-image scores, and configuration are in `artifacts/reports/segmentation_metrics.json`. `segmentation_qualitative_test_samples.png` is visual QA of those same held-out samples.
 
 ## Important limitation
 
-The requested **Dice ≥ 0.80 has not been reached** on the supplied data under the non-leaking protocol. This package does not alter the score, select on the test set, or report the 0.899 pixel accuracy as Dice. A proper attempt at the target needs more labelled vessel images (for example, the full training portion of a suitable licensed retinal-vessel dataset), a predeclared validation/test protocol, and preferably GPU training at higher resolution.
+The requested **Dice ≥ 0.80 has not been reached** on the supplied data under the non-leaking protocol. This FOV-restricted score must not be compared directly with the earlier full-frame score. This package does not select its threshold on the test set or report pixel accuracy as Dice. A stronger attempt at the target needs more labelled vessel images (for example, a suitable licensed retinal-vessel dataset), a predeclared validation/test protocol, and preferably GPU training.
 
 The classifier has **not** been trained or tested because its required labelled disease dataset was not provided. Its API/UI status is intentionally `unavailable` and it emits no disease prediction until a valid `data/classification/{train,val,test}/{A,D,G,N}` dataset is supplied and the documented training/evaluation commands run.
 
