@@ -47,7 +47,7 @@ class SegmentationService:
         self.image_size = None
         self.threshold = 0.5
         self.measured_metrics: dict[str, Any] | None = None
-        checkpoint_path = BEST_MODEL_CHECKPOINT if BEST_MODEL_CHECKPOINT.exists() else SEGMENTATION_CHECKPOINT
+        checkpoint_path = SEGMENTATION_CHECKPOINT if SEGMENTATION_CHECKPOINT.exists() else BEST_MODEL_CHECKPOINT
         if checkpoint_path.exists():
             checkpoint = torch.load(checkpoint_path, map_location=self.device)
             self.image_size = int(checkpoint["image_size"])

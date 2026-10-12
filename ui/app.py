@@ -14,7 +14,8 @@ API_URL = os.environ.get("RETINAL_API_URL", "http://127.0.0.1:8000")
 
 
 def api_request(method: str, path: str, **kwargs):
-    return requests.request(method, f"{API_URL}{path}", timeout=90, **kwargs)
+    timeout = kwargs.pop("timeout", 90)
+    return requests.request(method, f"{API_URL}{path}", timeout=timeout, **kwargs)
 
 
 def ensure_api() -> bool:
@@ -44,8 +45,14 @@ if not ensure_api():
 health = api_request("GET", "/health").json()
 with st.sidebar:
     st.subheader("Model status")
-    st.success("Vessel segmentation ready") if health["segmentation"]["available"] else st.error("Vessel model not trained")
-    st.success("Disease classifier ready") if health["classification"]["available"] else st.info("Disease classifier requires labelled A/D/G/N data")
+    if health["segmentation"]["available"]:
+        st.success("Vessel segmentation ready")
+    else:
+        st.error("Vessel model not trained")
+    if health["classification"]["available"]:
+        st.success("Disease classifier ready")
+    else:
+        st.info("Disease classifier requires labelled A/D/G/N data")
     if health["segmentation"].get("metrics"):
         st.caption("Saved held-out segmentation metrics")
         st.json(health["segmentation"]["metrics"])
